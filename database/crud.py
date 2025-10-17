@@ -1,8 +1,6 @@
-# database/crud.py
-
 import sqlite3
 import pandas as pd
-from datetime import datetime, date, timedelta
+from datetime import datetime, date
 from .models import db
 
 class CRUDOperations:
@@ -15,36 +13,20 @@ class CRUDOperations:
         conn = self.db.get_connection()
         cursor = conn.cursor()
         
-        try:
-            cursor.execute('''
-                INSERT INTO doctors (name, specialization, phone, email, address, hire_date, salary, commission_rate)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (name, specialization, phone, email, address, hire_date, salary, commission_rate))
-            
-            doctor_id = cursor.lastrowid
-            
-            # إنشاء حساب مالي للطبيب
-            self.create_or_update_account('doctor', doctor_id, name)
-            
-            # تسجيل النشاط
-            self.log_activity(conn, "إضافة طبيب", "doctors", doctor_id, f"تم إضافة طبيب: {name}")
-            
-            conn.commit()
-            return doctor_id
-        except Exception as e:
-            conn.rollback()
-            raise
-        finally:
-            conn.close()
+        cursor.execute('''
+            INSERT INTO doctors (name, specialization, phone, email, address, hire_date, salary, commission_rate)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (name, specialization, phone, email, address, hire_date, salary, commission_rate))
+        
+        doctor_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        return doctor_id
     
-    def get_all_doctors(self, active_only=True):
+    def get_all_doctors(self):
         """الحصول على جميع الأطباء"""
         conn = self.db.get_connection()
-        query = "SELECT * FROM doctors"
-        if active_only:
-            query += " WHERE is_active = 1"
-        query += " ORDER BY name"
-        df = pd.read_sql_query(query, conn)
+        df = pd.read_sql_query("SELECT * FROM doctors ORDER BY name", conn)
         conn.close()
         return df
     
@@ -61,62 +43,44 @@ class CRUDOperations:
         """تحديث بيانات طبيب"""
         conn = self.db.get_connection()
         cursor = conn.cursor()
+        
         cursor.execute('''
             UPDATE doctors 
             SET name=?, specialization=?, phone=?, email=?, address=?, salary=?, commission_rate=?
             WHERE id=?
         ''', (name, specialization, phone, email, address, salary, commission_rate, doctor_id))
-        self.log_activity(conn, "تحديث طبيب", "doctors", doctor_id, f"تم تحديث بيانات الطبيب: {name}")
+        
         conn.commit()
         conn.close()
     
     def delete_doctor(self, doctor_id):
-        """حذف طبيب (soft delete)"""
+        """حذف طبيب"""
         conn = self.db.get_connection()
         cursor = conn.cursor()
-        cursor.execute("UPDATE doctors SET is_active = 0 WHERE id = ?", (doctor_id,))
-        self.log_activity(conn, "حذف طبيب", "doctors", doctor_id, f"تم إلغاء تفعيل الطبيب")
+        cursor.execute("DELETE FROM doctors WHERE id = ?", (doctor_id,))
         conn.commit()
         conn.close()
     
     # ========== عمليات المرضى ==========
-    def create_patient(self, name, phone, email, address, date_of_birth, gender, medical_history="", 
-                      emergency_contact="", blood_type="", allergies="", notes=""):
-        """إضافة مريض جديد مع إنشاء حساب مالي"""
+    def create_patient(self, name, phone, email, address, date_of_birth, gender, medical_history="", emergency_contact=""):
+        """إضافة مريض جديد"""
         conn = self.db.get_connection()
         cursor = conn.cursor()
-        try:
-            cursor.execute('''
-                INSERT INTO patients (name, phone, email, address, date_of_birth, gender, medical_history, 
-                                    emergency_contact, blood_type, allergies, notes)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (name, phone, email, address, date_of_birth, gender, medical_history, 
-                  emergency_contact, blood_type, allergies, notes))
-            
-            patient_id = cursor.lastrowid
-            
-            account_id = self.create_or_update_account('patient', patient_id, name)
-            
-            if account_id:
-                self.log_activity(conn, "إضافة مريض وحساب", "patients", patient_id, 
-                                 f"تم إضافة مريض: {name} (حساب مالي: {account_id})")
-            
-            conn.commit()
-            return patient_id
-        except Exception as e:
-            conn.rollback()
-            raise
-        finally:
-            conn.close()
+        
+        cursor.execute('''
+            INSERT INTO patients (name, phone, email, address, date_of_birth, gender, medical_history, emergency_contact)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (name, phone, email, address, date_of_birth, gender, medical_history, emergency_contact))
+        
+        patient_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        return patient_id
     
-    def get_all_patients(self, active_only=True):
+    def get_all_patients(self):
         """الحصول على جميع المرضى"""
         conn = self.db.get_connection()
-        query = "SELECT * FROM patients"
-        if active_only:
-            query += " WHERE is_active = 1"
-        query += " ORDER BY name"
-        df = pd.read_sql_query(query, conn)
+        df = pd.read_sql_query("SELECT * FROM patients ORDER BY name", conn)
         conn.close()
         return df
     
@@ -129,70 +93,48 @@ class CRUDOperations:
         conn.close()
         return result
     
-    def update_patient(self, patient_id, name, phone, email, address, date_of_birth, gender, 
-                      medical_history, emergency_contact, blood_type="", allergies="", notes=""):
+    def update_patient(self, patient_id, name, phone, email, address, date_of_birth, gender, medical_history, emergency_contact):
         """تحديث بيانات مريض"""
         conn = self.db.get_connection()
         cursor = conn.cursor()
+        
         cursor.execute('''
             UPDATE patients 
-            SET name=?, phone=?, email=?, address=?, date_of_birth=?, gender=?, 
-                medical_history=?, emergency_contact=?, blood_type=?, allergies=?, notes=?
+            SET name=?, phone=?, email=?, address=?, date_of_birth=?, gender=?, medical_history=?, emergency_contact=?
             WHERE id=?
-        ''', (name, phone, email, address, date_of_birth, gender, medical_history, 
-              emergency_contact, blood_type, allergies, notes, patient_id))
-        self.log_activity(conn, "تحديث مريض", "patients", patient_id, f"تم تحديث بيانات المريض: {name}")
+        ''', (name, phone, email, address, date_of_birth, gender, medical_history, emergency_contact, patient_id))
+        
         conn.commit()
         conn.close()
     
     def delete_patient(self, patient_id):
-        """حذف مريض (soft delete)"""
+        """حذف مريض"""
         conn = self.db.get_connection()
         cursor = conn.cursor()
-        cursor.execute("UPDATE patients SET is_active = 0 WHERE id = ?", (patient_id,))
-        self.log_activity(conn, "حذف مريض", "patients", patient_id, f"تم إلغاء تفعيل المريض")
+        cursor.execute("DELETE FROM patients WHERE id = ?", (patient_id,))
         conn.commit()
         conn.close()
     
-    def search_patients(self, search_term):
-        """البحث عن مرضى"""
-        conn = self.db.get_connection()
-        query = '''
-            SELECT * FROM patients 
-            WHERE is_active = 1 
-            AND (name LIKE ? OR phone LIKE ? OR email LIKE ?)
-            ORDER BY name
-        '''
-        search_pattern = f"%{search_term}%"
-        df = pd.read_sql_query(query, conn, params=(search_pattern, search_pattern, search_pattern))
-        conn.close()
-        return df
-    
     # ========== عمليات العلاجات ==========
-    def create_treatment(self, name, description, base_price, duration_minutes, category, 
-                        doctor_percentage=50.0, clinic_percentage=50.0):
+    def create_treatment(self, name, description, base_price, duration_minutes, category):
         """إضافة علاج جديد"""
         conn = self.db.get_connection()
         cursor = conn.cursor()
+        
         cursor.execute('''
-            INSERT INTO treatments (name, description, base_price, duration_minutes, category, 
-                                  doctor_percentage, clinic_percentage)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        ''', (name, description, base_price, duration_minutes, category, doctor_percentage, clinic_percentage))
+            INSERT INTO treatments (name, description, base_price, duration_minutes, category)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (name, description, base_price, duration_minutes, category))
+        
         treatment_id = cursor.lastrowid
-        self.log_activity(conn, "إضافة علاج", "treatments", treatment_id, f"تم إضافة علاج: {name}")
         conn.commit()
         conn.close()
         return treatment_id
     
-    def get_all_treatments(self, active_only=True):
+    def get_all_treatments(self):
         """الحصول على جميع العلاجات"""
         conn = self.db.get_connection()
-        query = "SELECT * FROM treatments"
-        if active_only:
-            query += " WHERE is_active = 1"
-        query += " ORDER BY name"
-        df = pd.read_sql_query(query, conn)
+        df = pd.read_sql_query("SELECT * FROM treatments WHERE is_active = 1 ORDER BY name", conn)
         conn.close()
         return df
     
@@ -205,70 +147,58 @@ class CRUDOperations:
         conn.close()
         return result
     
-    def update_treatment(self, treatment_id, name, description, base_price, duration_minutes, 
-                        category, doctor_percentage=50.0, clinic_percentage=50.0):
+    def update_treatment(self, treatment_id, name, description, base_price, duration_minutes, category):
         """تحديث علاج"""
         conn = self.db.get_connection()
         cursor = conn.cursor()
+        
         cursor.execute('''
             UPDATE treatments 
-            SET name=?, description=?, base_price=?, duration_minutes=?, category=?, 
-                doctor_percentage=?, clinic_percentage=?
+            SET name=?, description=?, base_price=?, duration_minutes=?, category=?
             WHERE id=?
-        ''', (name, description, base_price, duration_minutes, category, 
-              doctor_percentage, clinic_percentage, treatment_id))
-        self.log_activity(conn, "تحديث علاج", "treatments", treatment_id, f"تم تحديث علاج: {name}")
+        ''', (name, description, base_price, duration_minutes, category, treatment_id))
+        
         conn.commit()
         conn.close()
     
     def delete_treatment(self, treatment_id):
-        """حذف علاج (soft delete)"""
+        """حذف علاج (إلغاء تفعيل)"""
         conn = self.db.get_connection()
         cursor = conn.cursor()
         cursor.execute("UPDATE treatments SET is_active = 0 WHERE id = ?", (treatment_id,))
-        self.log_activity(conn, "حذف علاج", "treatments", treatment_id, f"تم إلغاء تفعيل العلاج")
         conn.commit()
         conn.close()
     
     # ========== عمليات المواعيد ==========
-    def create_appointment(self, patient_id, doctor_id, treatment_id, appointment_date, 
-                          appointment_time, notes="", total_cost=0.0):
-        """إضافة موعد جديد مع تسجيل الدين على المريض"""
+    def create_appointment(self, patient_id, doctor_id, treatment_id, appointment_date, appointment_time, notes="", total_cost=0.0):
+        """إضافة موعد جديد"""
         conn = self.db.get_connection()
         cursor = conn.cursor()
-        try:
-            cursor.execute('''
-                INSERT INTO appointments (patient_id, doctor_id, treatment_id, appointment_date, 
-                                        appointment_time, notes, total_cost)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            ''', (patient_id, doctor_id, treatment_id, appointment_date, appointment_time, notes, total_cost))
-            appointment_id = cursor.lastrowid
-            conn.commit()
-            
-            if total_cost > 0:
-                patient_name = pd.read_sql_query("SELECT name FROM patients WHERE id = ?", conn, params=(patient_id,)).iloc[0]['name']
-                account_id = self.create_or_update_account('patient', patient_id, patient_name)
-                if account_id:
-                    self.add_financial_transaction(
-                        account_id, 'debit', total_cost,
-                        f"تكلفة علاج (موعد رقم {appointment_id})",
-                        'appointment', appointment_id
-                    )
-            
-            self.log_activity(conn, "إضافة موعد", "appointments", appointment_id, f"موعد لـ {patient_name} بتكلفة {total_cost}")
-            return appointment_id
-        except Exception as e:
-            conn.rollback()
-            raise
-        finally:
-            conn.close()
+        
+        cursor.execute('''
+            INSERT INTO appointments (patient_id, doctor_id, treatment_id, appointment_date, appointment_time, notes, total_cost)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (patient_id, doctor_id, treatment_id, appointment_date, appointment_time, notes, total_cost))
+        
+        appointment_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        return appointment_id
     
     def get_all_appointments(self):
-        """الحصول على جميع المواعيد"""
+        """الحصول على جميع المواعيد مع تفاصيل المريض والطبيب والعلاج"""
         conn = self.db.get_connection()
         query = '''
-            SELECT a.id, p.name as patient_name, d.name as doctor_name, t.name as treatment_name,
-                   a.appointment_date, a.appointment_time, a.status, a.total_cost
+            SELECT 
+                a.id,
+                p.name as patient_name,
+                d.name as doctor_name,
+                t.name as treatment_name,
+                a.appointment_date,
+                a.appointment_time,
+                a.status,
+                a.total_cost,
+                a.notes
             FROM appointments a
             LEFT JOIN patients p ON a.patient_id = p.id
             LEFT JOIN doctors d ON a.doctor_id = d.id
@@ -283,8 +213,14 @@ class CRUDOperations:
         """الحصول على مواعيد يوم محدد"""
         conn = self.db.get_connection()
         query = '''
-            SELECT a.id, p.name as patient_name, d.name as doctor_name, t.name as treatment_name,
-                   a.appointment_time, a.status
+            SELECT 
+                a.id,
+                p.name as patient_name,
+                d.name as doctor_name,
+                t.name as treatment_name,
+                a.appointment_time,
+                a.status,
+                a.total_cost
             FROM appointments a
             LEFT JOIN patients p ON a.patient_id = p.id
             LEFT JOIN doctors d ON a.doctor_id = d.id
@@ -301,87 +237,37 @@ class CRUDOperations:
         conn = self.db.get_connection()
         cursor = conn.cursor()
         cursor.execute("UPDATE appointments SET status = ? WHERE id = ?", (status, appointment_id))
-        self.log_activity(conn, "تحديث موعد", "appointments", appointment_id, f"تم تغيير الحالة إلى: {status}")
         conn.commit()
         conn.close()
     
     # ========== عمليات المدفوعات ==========
     def create_payment(self, appointment_id, patient_id, amount, payment_method, payment_date, notes=""):
-        """إضافة دفعة جديدة مع تكاملها مع نظام الحسابات"""
+        """إضافة دفعة جديدة"""
         conn = self.db.get_connection()
         cursor = conn.cursor()
-        try:
-            doctor_share, clinic_share, doctor_percentage, clinic_percentage, doctor_id = 0.0, 0.0, 0.0, 0.0, None
-            
-            if appointment_id:
-                cursor.execute('''
-                    SELECT t.doctor_percentage, t.clinic_percentage, a.doctor_id
-                    FROM appointments a
-                    LEFT JOIN treatments t ON a.treatment_id = t.id
-                    WHERE a.id = ?
-                ''', (appointment_id,))
-                result = cursor.fetchone()
-                
-                if result and result[0] is not None:
-                    doctor_percentage, clinic_percentage, doctor_id = result
-                    doctor_share = (amount * doctor_percentage) / 100.0
-                    clinic_share = amount - doctor_share
-                else:
-                    cursor.execute("SELECT doctor_id FROM appointments WHERE id = ?", (appointment_id,))
-                    doc_res = cursor.fetchone()
-                    if doc_res:
-                        doctor_id = doc_res[0]
-                    doctor_share = amount * 0.5
-                    clinic_share = amount * 0.5
-            else:
-                clinic_share = amount
-                
-            cursor.execute('''
-                INSERT INTO payments (appointment_id, patient_id, amount, payment_method, payment_date, notes, doctor_share, clinic_share, doctor_percentage, clinic_percentage)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (appointment_id, patient_id, amount, payment_method, payment_date, notes, doctor_share, clinic_share, doctor_percentage, clinic_percentage))
-            payment_id = cursor.lastrowid
-            conn.commit()
-            
-            patient_name = pd.read_sql_query("SELECT name FROM patients WHERE id = ?", conn, params=(patient_id,)).iloc[0]['name']
-            patient_account_id = self.create_or_update_account('patient', patient_id, patient_name)
-            if patient_account_id:
-                self.add_financial_transaction(
-                    patient_account_id, 'payment', amount,
-                    f"دفعة لعلاج (موعد رقم {appointment_id or 'N/A'})", 'payment', payment_id, payment_method, notes
-                )
-            
-            if doctor_id and doctor_share > 0:
-                doctor_name = pd.read_sql_query("SELECT name FROM doctors WHERE id = ?", conn, params=(doctor_id,)).iloc[0]['name']
-                doctor_account_id = self.create_or_update_account('doctor', doctor_id, doctor_name)
-                if doctor_account_id:
-                    self.add_financial_transaction(
-                        doctor_account_id, 'credit', doctor_share,
-                        f"عمولة من دفعة (رقم {payment_id})", 'payment', payment_id, None, f"حصة من دفعة {amount}"
-                    )
-            
-            clinic_account_id = self.create_or_update_account('clinic', 1, 'حساب العيادة العام')
-            if clinic_account_id:
-                self.add_financial_transaction(
-                    clinic_account_id, 'credit', clinic_share,
-                    f"إيراد من دفعة (رقم {payment_id})", 'payment', payment_id, None, f"حصة من دفعة {amount}"
-                )
-            
-            self.log_activity(conn, "إضافة دفعة متكاملة", "payments", payment_id, f"دفعة {amount} لـ {patient_name}")
-            return payment_id
-
-        except Exception as e:
-            conn.rollback()
-            raise
-        finally:
-            conn.close()
-            
+        
+        cursor.execute('''
+            INSERT INTO payments (appointment_id, patient_id, amount, payment_method, payment_date, notes)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (appointment_id, patient_id, amount, payment_method, payment_date, notes))
+        
+        payment_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        return payment_id
+    
     def get_all_payments(self):
         """الحصول على جميع المدفوعات"""
         conn = self.db.get_connection()
         query = '''
-            SELECT pay.id, p.name as patient_name, pay.amount, pay.doctor_share, pay.clinic_share,
-                   pay.payment_method, pay.payment_date, pay.status, pay.appointment_id
+            SELECT 
+                pay.id,
+                p.name as patient_name,
+                pay.amount,
+                pay.payment_method,
+                pay.payment_date,
+                pay.status,
+                pay.notes
             FROM payments pay
             LEFT JOIN patients p ON pay.patient_id = p.id
             ORDER BY pay.payment_date DESC
@@ -390,189 +276,133 @@ class CRUDOperations:
         conn.close()
         return df
     
-    # ========== نظام الحسابات المالي الشامل ==========
-    def create_or_update_account(self, account_type, holder_id, holder_name):
-        """إنشاء أو تحديث حساب مالي"""
+    # ========== عمليات المخزون ==========
+    def create_inventory_item(self, item_name, category, quantity, unit_price, min_stock_level, supplier_id=None, expiry_date=None):
+        """إضافة عنصر مخزون جديد"""
         conn = self.db.get_connection()
         cursor = conn.cursor()
-        try:
-            cursor.execute('''SELECT id FROM accounts WHERE account_type = ? AND account_holder_id = ?''', (account_type, holder_id))
-            existing = cursor.fetchone()
-            if existing:
-                return existing[0]
-            else:
-                cursor.execute('''
-                    INSERT INTO accounts (account_type, account_holder_id, account_holder_name) VALUES (?, ?, ?)
-                ''', (account_type, holder_id, holder_name))
-                account_id = cursor.lastrowid
-                conn.commit()
-                return account_id
-        except Exception as e:
-            conn.rollback()
-            raise
-        finally:
-            conn.close()
-
-    def add_financial_transaction(self, account_id, transaction_type, amount, 
-                                 description, reference_type=None, reference_id=None,
-                                 payment_method=None, notes=None):
-        """إضافة حركة مالية مع تحديث رصيد الحساب"""
+        
+        cursor.execute('''
+            INSERT INTO inventory (item_name, category, quantity, unit_price, min_stock_level, supplier_id, expiry_date)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (item_name, category, quantity, unit_price, min_stock_level, supplier_id, expiry_date))
+        
+        item_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        return item_id
+    
+    def get_all_inventory(self):
+        """الحصول على جميع عناصر المخزون"""
+        conn = self.db.get_connection()
+        query = '''
+            SELECT 
+                i.*,
+                s.name as supplier_name
+            FROM inventory i
+            LEFT JOIN suppliers s ON i.supplier_id = s.id
+            ORDER BY i.item_name
+        '''
+        df = pd.read_sql_query(query, conn)
+        conn.close()
+        return df
+    
+    def get_low_stock_items(self):
+        """الحصول على العناصر قليلة المخزون"""
+        conn = self.db.get_connection()
+        query = "SELECT * FROM inventory WHERE quantity <= min_stock_level ORDER BY quantity"
+        df = pd.read_sql_query(query, conn)
+        conn.close()
+        return df
+    
+    def update_inventory_quantity(self, item_id, quantity):
+        """تحديث كمية المخزون"""
         conn = self.db.get_connection()
         cursor = conn.cursor()
-        try:
-            cursor.execute('''
-                INSERT INTO financial_transactions 
-                (account_id, transaction_type, amount, description, reference_type, 
-                 reference_id, transaction_date, payment_method, notes)
-                VALUES (?, ?, ?, ?, ?, ?, date('now'), ?, ?)
-            ''', (account_id, transaction_type, amount, description, reference_type, reference_id, payment_method, notes))
-            
-            cursor.execute("SELECT account_type, balance, total_dues, total_paid FROM accounts WHERE id = ?", (account_id,))
-            result = cursor.fetchone()
-            if not result:
-                raise ValueError(f"الحساب رقم {account_id} غير موجود")
-            
-            account_type, current_balance, total_dues, total_paid = result
-            
-            if account_type == 'patient':
-                if transaction_type == 'payment':
-                    new_balance = current_balance + amount
-                    new_total_paid = total_paid + amount
-                    cursor.execute('UPDATE accounts SET total_paid = ?, balance = ? WHERE id = ?', (new_total_paid, new_balance, account_id))
-                elif transaction_type == 'debit':
-                    new_balance = current_balance - amount
-                    new_total_dues = total_dues + amount
-                    cursor.execute('UPDATE accounts SET total_dues = ?, balance = ? WHERE id = ?', (new_total_dues, new_balance, account_id))
-            
-            elif account_type == 'doctor':
-                if transaction_type == 'credit':
-                    new_balance = current_balance + amount
-                    cursor.execute("UPDATE accounts SET balance = ? WHERE id = ?", (new_balance, account_id))
-                elif transaction_type == 'withdrawal':
-                    new_balance = current_balance - amount
-                    cursor.execute("UPDATE accounts SET balance = ? WHERE id = ?", (new_balance, account_id))
-            
-            conn.commit()
-        except Exception as e:
-            conn.rollback()
-            raise
-        finally:
-            conn.close()
-
-    def get_account_statement(self, account_type, holder_id):
-        """الحصول على كشف حساب"""
-        conn = self.db.get_connection()
-        try:
-            account_id_query = "SELECT id FROM accounts WHERE account_type = ? AND account_holder_id = ?"
-            df_id = pd.read_sql_query(account_id_query, conn, params=(account_type, holder_id))
-            if df_id.empty:
-                return None
-            
-            account_id = df_id.iloc[0]['id']
-            transactions_query = "SELECT * FROM financial_transactions WHERE account_id = ? ORDER BY transaction_date DESC"
-            transactions = pd.read_sql_query(transactions_query, conn, params=(account_id,))
-            
-            account_info_query = "SELECT * FROM accounts WHERE id = ?"
-            account_info = pd.read_sql_query(account_info_query, conn, params=(account_id,)).iloc[0].to_dict()
-
-            return {'account': account_info, 'transactions': transactions}
-        finally:
-            conn.close()
+        cursor.execute("UPDATE inventory SET quantity = ? WHERE id = ?", (quantity, item_id))
+        conn.commit()
+        conn.close()
     
-    def get_patient_financial_summary(self, patient_id):
-        """ملخص مالي للمريض"""
+    # ========== عمليات الموردين ==========
+    def create_supplier(self, name, contact_person, phone, email, address, payment_terms):
+        """إضافة مورد جديد"""
         conn = self.db.get_connection()
-        try:
-            treatments_query = "SELECT COALESCE(SUM(total_cost), 0) as total_cost FROM appointments WHERE patient_id = ? AND status IN ('مكتمل', 'مؤكد')"
-            total_treatments = pd.read_sql_query(treatments_query, conn, params=(patient_id,)).iloc[0]['total_cost']
-            
-            payments_query = "SELECT COALESCE(SUM(amount), 0) as total_paid FROM payments WHERE patient_id = ? AND status = 'مكتمل'"
-            total_paid = pd.read_sql_query(payments_query, conn, params=(patient_id,)).iloc[0]['total_paid']
-            
-            outstanding = total_treatments - total_paid
-            
-            return {
-                'total_treatments_cost': total_treatments,
-                'total_paid': total_paid,
-                'outstanding_balance': outstanding,
-                'payment_status': 'مدفوع بالكامل' if outstanding <= 0 else f'متبقي {outstanding:.2f} ج.م'
-            }
-        finally:
-            conn.close()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            INSERT INTO suppliers (name, contact_person, phone, email, address, payment_terms)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (name, contact_person, phone, email, address, payment_terms))
+        
+        supplier_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        return supplier_id
     
-    def get_doctor_financial_summary(self, doctor_id):
-        """ملخص مالي للطبيب"""
+    def get_all_suppliers(self):
+        """الحصول على جميع الموردين"""
         conn = self.db.get_connection()
-        try:
-            earnings_query = '''
-                SELECT COALESCE(SUM(p.doctor_share), 0) as total_earnings
-                FROM payments p JOIN appointments a ON p.appointment_id = a.id
-                WHERE a.doctor_id = ? AND p.status = 'مكتمل'
-            '''
-            total_earnings = pd.read_sql_query(earnings_query, conn, params=(doctor_id,)).iloc[0]['total_earnings']
-            
-            withdrawals_query = '''
-                SELECT COALESCE(SUM(amount), 0) as total_withdrawn
-                FROM financial_transactions ft JOIN accounts a ON ft.account_id = a.id
-                WHERE a.account_type = 'doctor' AND a.account_holder_id = ? AND ft.transaction_type = 'withdrawal'
-            '''
-            total_withdrawn = pd.read_sql_query(withdrawals_query, conn, params=(doctor_id,)).iloc[0]['total_withdrawn']
-            
-            current_balance = total_earnings - total_withdrawn
-            
-            monthly_earnings_query = '''
-                SELECT strftime('%Y-%m', p.payment_date) as month, SUM(p.doctor_share) as earnings
-                FROM payments p JOIN appointments a ON p.appointment_id = a.id
-                WHERE a.doctor_id = ? AND p.status = 'مكتمل'
-                GROUP BY month ORDER BY month DESC LIMIT 6
-            '''
-            monthly_earnings = pd.read_sql_query(monthly_earnings_query, conn, params=(doctor_id,))
-            
-            return {
-                'total_earnings': total_earnings,
-                'total_withdrawn': total_withdrawn,
-                'current_balance': current_balance,
-                'monthly_earnings': monthly_earnings
-            }
-        finally:
-            conn.close()
-
-    def get_all_accounts_summary(self):
-        """ملخص جميع الحسابات"""
+        df = pd.read_sql_query("SELECT * FROM suppliers ORDER BY name", conn)
+        conn.close()
+        return df
+    
+    # ========== عمليات المصروفات ==========
+    def create_expense(self, category, description, amount, expense_date, payment_method, receipt_number="", notes=""):
+        """إضافة مصروف جديد"""
         conn = self.db.get_connection()
-        try:
-            return pd.read_sql_query("SELECT * FROM accounts", conn)
-        finally:
-            conn.close()
-            
-    def get_monthly_comparison(self, months=1):
-        """مقارنة شهرية"""
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            INSERT INTO expenses (category, description, amount, expense_date, payment_method, receipt_number, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (category, description, amount, expense_date, payment_method, receipt_number, notes))
+        
+        expense_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        return expense_id
+    
+    def get_all_expenses(self):
+        """الحصول على جميع المصروفات"""
         conn = self.db.get_connection()
-        try:
-            if months == 1:
-                today = date.today()
-                current_month_start = today.replace(day=1).isoformat()
-                current_month_end = today.isoformat()
-                last_month_end = (today.replace(day=1) - timedelta(days=1))
-                last_month_start = last_month_end.replace(day=1).isoformat()
-                last_month_end_iso = last_month_end.isoformat()
-                
-                current_revenue = pd.read_sql_query("SELECT COALESCE(SUM(amount), 0) as total FROM payments WHERE payment_date BETWEEN ? AND ?", conn, params=(current_month_start, current_month_end)).iloc[0]['total']
-                last_revenue = pd.read_sql_query("SELECT COALESCE(SUM(amount), 0) as total FROM payments WHERE payment_date BETWEEN ? AND ?", conn, params=(last_month_start, last_month_end_iso)).iloc[0]['total']
-                
-                # ... (باقي الحسابات للمقارنة السريعة)
-                
-                return {
-                    'current_revenue': current_revenue,
-                    'last_revenue': last_revenue,
-                    # ...
-                }
-            
-            # ... (باقي الكود للحصول على DataFrame)
-        finally:
-            conn.close()
+        df = pd.read_sql_query("SELECT * FROM expenses ORDER BY expense_date DESC", conn)
+        conn.close()
+        return df
+    
+    # ========== تقارير وإحصائيات ==========
+    def get_financial_summary(self, start_date=None, end_date=None):
+        """الحصول على ملخص مالي"""
+        conn = self.db.get_connection()
+        
+        # إجمالي المدفوعات
+        payments_query = "SELECT COALESCE(SUM(amount), 0) as total_payments FROM payments"
+        if start_date and end_date:
+            payments_query += f" WHERE payment_date BETWEEN '{start_date}' AND '{end_date}'"
+        
+        # إجمالي المصروفات
+        expenses_query = "SELECT COALESCE(SUM(amount), 0) as total_expenses FROM expenses"
+        if start_date and end_date:
+            expenses_query += f" WHERE expense_date BETWEEN '{start_date}' AND '{end_date}'"
+        
+        total_payments = pd.read_sql_query(payments_query, conn).iloc[0]['total_payments']
+        total_expenses = pd.read_sql_query(expenses_query, conn).iloc[0]['total_expenses']
+        
+        conn.close()
+        
+        return {
+            'total_revenue': total_payments,
+            'total_expenses': total_expenses,
+            'net_profit': total_payments - total_expenses
+        }
+    
+    def get_daily_appointments_count(self):
+        """عدد المواعيد اليومية"""
+        conn = self.db.get_connection()
+        today = date.today().isoformat()
+        query = "SELECT COUNT(*) as count FROM appointments WHERE appointment_date = ?"
+        result = pd.read_sql_query(query, conn, params=(today,))
+        conn.close()
+        return result.iloc[0]['count'] if not result.empty else 0
 
-    # ... باقي الدوال ...
-
-# إنشاء مثيل
+# إنشاء مثيل من عمليات CRUD
 crud = CRUDOperations()
