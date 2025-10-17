@@ -1,0 +1,28 @@
+cura-clinic-app/
+├── app.py
+├── styles.py
+├── dashboard.py
+├── appointments.py
+├── patients.py
+├── doctors.py
+├── treatments.py
+├── payments.py
+├── inventory.py
+├── suppliers.py
+├── expenses.py
+├── reports.py
+├── reports_advanced.py
+├── settings.py
+├── activity_log.py
+│
+├── components/
+│   ├── __init__.py
+│   ├── notifications.py
+│   └── quick_actions.py
+│
+├── database/
+│   ├── __init__.py
+│   ├── models.py
+│   └── crud.py
+│
+└── requirements.txt
