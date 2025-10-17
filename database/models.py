@@ -1,5 +1,5 @@
-# هذا الملف يحتوي على التحديثات الأخيرة للجداول الجديدة
-# تأكد من أن هذا هو الكود الذي تستخدمه
+# database/models.py
+
 import sqlite3
 from datetime import datetime, date, timedelta
 import os
@@ -25,8 +25,11 @@ class Database:
                     # الجداول الأساسية
                     self.create_base_tables(cursor)
                     
-                    # الجداول الجديدة للميزات المتقدمة
+                    # الجداول المتقدمة للميزات الجديدة
                     self.create_advanced_tables(cursor)
+                    
+                    # جداول نظام الحسابات المالي
+                    self.create_financial_tables(cursor)
                     
                     # إضافة بيانات تجريبية
                     self.add_sample_data(conn, cursor)
@@ -292,6 +295,114 @@ class Database:
             )
         ''')
     
+    def create_financial_tables(self, cursor):
+        """إنشاء جداول نظام الحسابات المالي"""
+        
+        # جدول الحسابات المالية الرئيسي
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS accounts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                account_type TEXT NOT NULL,
+                account_holder_id INTEGER NOT NULL,
+                account_holder_name TEXT NOT NULL,
+                total_dues REAL DEFAULT 0.0,
+                total_paid REAL DEFAULT 0.0,
+                balance REAL DEFAULT 0.0,
+                last_transaction_date DATE,
+                notes TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        # جدول الحركات المالية
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS financial_transactions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                account_id INTEGER NOT NULL,
+                transaction_type TEXT NOT NULL,
+                amount REAL NOT NULL,
+                description TEXT,
+                reference_type TEXT,
+                reference_id INTEGER,
+                transaction_date DATE NOT NULL,
+                payment_method TEXT,
+                receipt_number TEXT,
+                notes TEXT,
+                created_by TEXT DEFAULT 'النظام',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (account_id) REFERENCES accounts (id)
+            )
+        ''')
+        
+        # جدول كشف الحساب للمرضى
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS patient_account_statements (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                patient_id INTEGER NOT NULL,
+                total_treatments_cost REAL DEFAULT 0.0,
+                total_paid REAL DEFAULT 0.0,
+                outstanding_balance REAL DEFAULT 0.0,
+                last_payment_date DATE,
+                payment_status TEXT DEFAULT 'pending',
+                notes TEXT,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (patient_id) REFERENCES patients (id)
+            )
+        ''')
+        
+        # جدول كشف حساب الأطباء  
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS doctor_account_statements (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                doctor_id INTEGER NOT NULL,
+                total_earnings REAL DEFAULT 0.0,
+                total_withdrawn REAL DEFAULT 0.0,
+                current_balance REAL DEFAULT 0.0,
+                last_withdrawal_date DATE,
+                notes TEXT,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (doctor_id) REFERENCES doctors (id)
+            )
+        ''')
+        
+        # جدول كشف حساب الموردين
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS supplier_account_statements (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                supplier_id INTEGER NOT NULL,
+                total_purchases REAL DEFAULT 0.0,
+                total_paid REAL DEFAULT 0.0,
+                outstanding_balance REAL DEFAULT 0.0,
+                last_payment_date DATE,
+                payment_terms TEXT,
+                credit_limit REAL DEFAULT 0.0,
+                notes TEXT,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (supplier_id) REFERENCES suppliers (id)
+            )
+        ''')
+        
+        # جدول سندات القبض والصرف
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS vouchers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                voucher_type TEXT NOT NULL,
+                voucher_number TEXT UNIQUE NOT NULL,
+                account_id INTEGER,
+                amount REAL NOT NULL,
+                payment_method TEXT,
+                description TEXT,
+                voucher_date DATE NOT NULL,
+                created_by TEXT,
+                approved_by TEXT,
+                status TEXT DEFAULT 'pending',
+                notes TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (account_id) REFERENCES accounts (id)
+            )
+        ''')
+    
     def add_sample_data(self, conn, cursor):
         """إضافة بيانات تجريبية"""
         cursor.execute("SELECT COUNT(*) FROM doctors")
@@ -375,9 +486,7 @@ class Database:
                 ("حشو أبيض (كمبوزيت)", "مواد طبية", 30, 150.0, 10, 2, "2026-08-31", "مخزن B", "BAR005", 1),
                 ("مطهر طبي (ليتر)", "مستهلكات", 25, 45.0, 10, 1, "2025-09-30", "مخزن A", "BAR006", 1),
                 ("إبر حقن", "مستهلكات", 5, 0.5, 50, 1, "2026-03-31", "مخزن A", "BAR007", 1),
-                ("قطن طبي (كيلو)", "مستهلكات", 15, 35.0, 5, 1, "2027-12-31", "مخزن A", "BAR008", 1),
-                ("شاش معقم", "مستهلكات", 60, 5.0, 20, 1, "2026-11-30", "مخزن A", "BAR009", 1),
-                ("معجون أسنان طبي", "منتجات", 100, 25.0, 30, 3, "2026-05-31", "مخزن C", "BAR010", 1)
+                ("قطن طبي (كيلو)", "مستهلكات", 15, 35.0, 5, 1, "2027-12-31", "مخزن A", "BAR008", 1)
             ]
             cursor.executemany('''
                 INSERT INTO inventory (item_name, category, quantity, unit_price, min_stock_level, supplier_id, expiry_date, location, barcode, is_active) 
@@ -403,41 +512,12 @@ class Database:
                 ("رواتب", "رواتب الأطباء - شهر سابق", 53000.0, last_month.isoformat(), "تحويل بنكي", "SAL-001", "", "الإدارة", 1),
                 ("إيجار", "إيجار العيادة - شهري", 8000.0, last_month.isoformat(), "تحويل بنكي", "RENT-001", "", "الإدارة", 1),
                 ("كهرباء ومياه", "فواتير الخدمات", 1500.0, two_weeks_ago.isoformat(), "نقدي", "UTIL-001", "", "الإدارة", 0),
-                ("صيانة", "صيانة جهاز الأشعة", 2500.0, two_weeks_ago.isoformat(), "نقدي", "MAINT-001", "", "الإدارة", 0),
-                ("مستلزمات", "شراء مستهلكات طبية", 4500.0, yesterday.isoformat(), "شيك", "SUP-001", "من شركة المستلزمات", "الإدارة", 0),
-                ("تسويق", "إعلانات على السوشيال ميديا", 1000.0, (today - timedelta(days=5)).isoformat(), "بطاقة ائتمان", "MKT-001", "", "الإدارة", 0)
+                ("صيانة", "صيانة جهاز الأشعة", 2500.0, two_weeks_ago.isoformat(), "نقدي", "MAINT-001", "", "الإدارة", 0)
             ]
             cursor.executemany('''
                 INSERT INTO expenses (category, description, amount, expense_date, payment_method, receipt_number, notes, approved_by, is_recurring) 
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', sample_expenses)
-            
-            # استخدام المخزون
-            sample_usage = [
-                (1, 1, 2, yesterday.isoformat(), "استخدام في فحص المريض"),
-                (7, 2, 1, yesterday.isoformat(), "حقنة تخدير"),
-                (3, 2, 1, yesterday.isoformat(), "تخدير موضعي")
-            ]
-            cursor.executemany('''
-                INSERT INTO inventory_usage (inventory_id, appointment_id, quantity_used, usage_date, notes) 
-                VALUES (?, ?, ?, ?, ?)
-            ''', sample_usage)
-            
-            # تحديث كميات المخزون
-            cursor.execute("UPDATE inventory SET quantity = quantity - 2 WHERE id = 1")
-            cursor.execute("UPDATE inventory SET quantity = quantity - 1 WHERE id = 7")
-            cursor.execute("UPDATE inventory SET quantity = quantity - 1 WHERE id = 3")
-            
-            # إضافة إشعارات تجريبية
-            sample_notifications = [
-                ("appointment", "مواعيد اليوم", f"لديك {len([a for a in sample_appointments if a[3] == today.isoformat()])} مواعيد اليوم", "high", 0, today.isoformat(), None, "appointments"),
-                ("inventory", "تنبيه مخزون", "صنف 'إبر حقن' وصل للحد الأدنى", "urgent", 0, today.isoformat(), 7, "inventory"),
-                ("payment", "دفعات معلقة", "يوجد دفعات معلقة للمراجعة", "normal", 0, today.isoformat(), None, "payments")
-            ]
-            cursor.executemany('''
-                INSERT INTO notifications (type, title, message, priority, is_read, target_date, related_id, action_link) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ''', sample_notifications)
             
             conn.commit()
             print("✅ تم إضافة البيانات التجريبية بنجاح!")
@@ -467,51 +547,6 @@ class Database:
         except sqlite3.Error as e:
             print(f"❌ خطأ في إضافة الإعدادات: {e}")
     
-    def upgrade_schema(self):
-        """ترقية قاعدة البيانات بدون حذف البيانات"""
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
-                
-                # إضافة الأعمدة الجديدة للجداول الموجودة
-                alterations = [
-                    ("treatments", "color_code", "ALTER TABLE treatments ADD COLUMN color_code TEXT DEFAULT '#667eea'"),
-                    ("treatments", "doctor_percentage", "ALTER TABLE treatments ADD COLUMN doctor_percentage REAL DEFAULT 50.0"),
-                    ("treatments", "clinic_percentage", "ALTER TABLE treatments ADD COLUMN clinic_percentage REAL DEFAULT 50.0"),
-                    ("payments", "doctor_share", "ALTER TABLE payments ADD COLUMN doctor_share REAL DEFAULT 0.0"),
-                    ("payments", "clinic_share", "ALTER TABLE payments ADD COLUMN clinic_share REAL DEFAULT 0.0"),
-                    ("payments", "doctor_percentage", "ALTER TABLE payments ADD COLUMN doctor_percentage REAL DEFAULT 0.0"),
-                    ("payments", "clinic_percentage", "ALTER TABLE payments ADD COLUMN clinic_percentage REAL DEFAULT 0.0"),
-                    ("patients", "blood_type", "ALTER TABLE patients ADD COLUMN blood_type TEXT"),
-                    ("patients", "allergies", "ALTER TABLE patients ADD COLUMN allergies TEXT"),
-                    ("patients", "notes", "ALTER TABLE patients ADD COLUMN notes TEXT"),
-                    ("patients", "is_active", "ALTER TABLE patients ADD COLUMN is_active BOOLEAN DEFAULT 1"),
-                    ("doctors", "is_active", "ALTER TABLE doctors ADD COLUMN is_active BOOLEAN DEFAULT 1"),
-                    ("inventory", "location", "ALTER TABLE inventory ADD COLUMN location TEXT"),
-                    ("inventory", "barcode", "ALTER TABLE inventory ADD COLUMN barcode TEXT"),
-                    ("inventory", "is_active", "ALTER TABLE inventory ADD COLUMN is_active BOOLEAN DEFAULT 1"),
-                    ("suppliers", "is_active", "ALTER TABLE suppliers ADD COLUMN is_active BOOLEAN DEFAULT 1"),
-                    ("appointments", "reminder_sent", "ALTER TABLE appointments ADD COLUMN reminder_sent BOOLEAN DEFAULT 0"),
-                    ("expenses", "approved_by", "ALTER TABLE expenses ADD COLUMN approved_by TEXT"),
-                    ("expenses", "is_recurring", "ALTER TABLE expenses ADD COLUMN is_recurring BOOLEAN DEFAULT 0"),
-                ]
-                
-                for table_name, column_name, sql in alterations:
-                    try:
-                        cursor.execute(sql)
-                        print(f"✅ تم إضافة {column_name} إلى {table_name}")
-                    except sqlite3.OperationalError:
-                        pass
-                
-                # إنشاء الجداول الجديدة
-                self.create_advanced_tables(cursor)
-                
-                conn.commit()
-                print("✅ تمت ترقية قاعدة البيانات بنجاح!")
-                
-        except sqlite3.Error as e:
-            print(f"❌ خطأ في ترقية قاعدة البيانات: {e}")
-    
     def get_connection(self):
         """الحصول على اتصال بقاعدة البيانات"""
         return sqlite3.connect(self.db_path)
@@ -527,7 +562,6 @@ class Database:
             import shutil
             shutil.copy2(self.db_path, backup_path)
             
-            # تسجيل في سجل النسخ الاحتياطي
             file_size = os.path.getsize(backup_path)
             conn = self.get_connection()
             cursor = conn.cursor()
@@ -542,23 +576,8 @@ class Database:
             return backup_path
         except Exception as e:
             print(f"❌ خطأ في إنشاء النسخة الاحتياطية: {e}")
-            
-            # تسجيل الفشل
-            try:
-                conn = self.get_connection()
-                cursor = conn.cursor()
-                cursor.execute('''
-                    INSERT INTO backup_log (backup_type, backup_path, status, error_message)
-                    VALUES (?, ?, ?, ?)
-                ''', ("local", backup_path, "failed", str(e)))
-                conn.commit()
-                conn.close()
-            except:
-                pass
-            
             return None
 
 # تهيئة قاعدة البيانات
 db = Database()
 db.initialize()
-db.upgrade_schema()

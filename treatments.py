@@ -28,32 +28,65 @@ def render_treatment_list():
         )
 
         with st.expander("🛠 تعديل علاج"):
-            treatment_id = st.number_input("رقم العلاج", min_value=1, step=1)
+            treatment_id = st.number_input("رقم العلاج", min_value=1, step=1, key="edit_treatment_id")
             treatment = crud.get_treatment_by_id(treatment_id)
 
             if treatment:
-                name = st.text_input("اسم العلاج", treatment[1])
-                description = st.text_area("الوصف", treatment[2])
-                base_price = st.number_input("السعر الأساسي", float(treatment[3]), step=50.0, min_value=0.0)
-                duration = st.number_input("المدة بالدقائق", treatment[4], min_value=0)
-                category = st.text_input("الفئة", treatment[5])
-                doctor_pct = st.slider("نسبة الطبيب", 0, 100, int(treatment[6]))
+                # ✅ الطريقة الصحيحة - استخدام value= بشكل صريح
+                name = st.text_input("اسم العلاج", value=str(treatment[1]))
+                description = st.text_area("الوصف", value=str(treatment[2]) if treatment[2] else "")
+                
+                # ✅ تصحيح: استخدام value= قبل float
+                base_price = st.number_input(
+                    "السعر الأساسي", 
+                    value=float(treatment[3]), 
+                    min_value=0.0,
+                    step=50.0
+                )
+                
+                duration = st.number_input(
+                    "المدة بالدقائق", 
+                    value=int(treatment[4]) if treatment[4] else 30, 
+                    min_value=0,
+                    step=5
+                )
+                
+                category = st.text_input("الفئة", value=str(treatment[5]) if treatment[5] else "عام")
+                
+                doctor_pct = st.slider(
+                    "نسبة الطبيب %", 
+                    min_value=0, 
+                    max_value=100, 
+                    value=int(treatment[6]) if treatment[6] else 50
+                )
+                
                 clinic_pct = 100 - doctor_pct
+                st.info(f"✅ نسبة العيادة: {clinic_pct}%")
 
-                if st.button("تحديث العلاج"):
-                    crud.update_treatment(
-                        treatment_id, name, description, base_price,
-                        duration, category, doctor_pct, clinic_pct
-                    )
-                    st.success("✅ تم التحديث بنجاح")
-                    st.rerun()
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    if st.button("💾 تحديث العلاج", type="primary"):
+                        try:
+                            crud.update_treatment(
+                                treatment_id, name, description, base_price,
+                                duration, category, doctor_pct, clinic_pct
+                            )
+                            st.success("✅ تم التحديث بنجاح")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"❌ خطأ: {str(e)}")
 
-                if st.button("🗑 حذف العلاج"):
-                    crud.delete_treatment(treatment_id)
-                    st.success("✅ تم إلغاء تفعيل العلاج")
-                    st.rerun()
+                with col2:
+                    if st.button("🗑 حذف العلاج", type="secondary"):
+                        try:
+                            crud.delete_treatment(treatment_id)
+                            st.success("✅ تم إلغاء تفعيل العلاج")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"❌ خطأ: {str(e)}")
             else:
-                st.warning("لم يتم العثور على العلاج")
+                st.warning("⚠️ لم يتم العثور على العلاج")
 
     else:
         st.info("لا توجد بيانات علاجات بعد.")
@@ -67,14 +100,40 @@ def render_add_treatment():
     with col1:
         name = st.text_input("اسم العلاج *")
         description = st.text_area("الوصف")
-        base_price = st.number_input("السعر", min_value=0.0, step=50.0)
-        duration = st.number_input("المدة (دقائق)", min_value=0)
-        category = st.text_input("الفئة", value="عام")
+        
+        # ✅ استخدام value= بشكل صريح
+        base_price = st.number_input(
+            "السعر *", 
+            value=0.0,
+            min_value=0.0, 
+            step=50.0
+        )
+        
+        duration = st.number_input(
+            "المدة (دقائق)", 
+            value=30,
+            min_value=0,
+            step=5
+        )
+        
+        category = st.selectbox(
+            "الفئة",
+            ["عام", "وقائي", "علاجي", "تجميلي", "جراحي", "تشخيصي"]
+        )
 
     with col2:
         doctor_pct = st.slider("نسبة الطبيب %", 0, 100, 50)
         clinic_pct = 100 - doctor_pct
-        st.info(f"نسبة العيادة: {clinic_pct}%")
+        st.info(f"✅ نسبة العيادة: {clinic_pct}%")
+        
+        st.markdown("---")
+        st.markdown("**💡 معاينة التقسيم:**")
+        if base_price > 0:
+            st.write(f"💰 السعر الكلي: **{base_price:.2f} ج.م**")
+            st.write(f"👨‍⚕️ حصة الطبيب: **{(base_price * doctor_pct / 100):.2f} ج.م**")
+            st.write(f"🏥 حصة العيادة: **{(base_price * clinic_pct / 100):.2f} ج.م**")
+        else:
+            st.caption("أدخل السعر لعرض التقسيم")
     
     if st.button("💾 حفظ العلاج", type="primary", use_container_width=True):
         if name and base_price > 0:
@@ -83,10 +142,10 @@ def render_add_treatment():
                     name, description, base_price, duration, category,
                     doctor_pct, clinic_pct
                 )
-                st.success("✅ تم إضافة العلاج")
+                st.success("✅ تم إضافة العلاج بنجاح!")
                 st.balloons()
                 st.rerun()
             except Exception as e:
                 st.error(f"❌ خطأ: {str(e)}")
         else:
-            st.warning("يرجى إدخال اسم العلاج والسعر.")
+            st.warning("⚠️ يرجى إدخال اسم العلاج والسعر.")
