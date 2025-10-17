@@ -1,238 +1,245 @@
-# reports_advanced.py (Full Corrected Code)
+# app.py
 
 import streamlit as st
-import pandas as pd
-from datetime import date, timedelta
+from datetime import date, datetime
 from database.crud import crud
-import plotly.express as px
+from database.models import db
+from styles import load_custom_css
+from components.notifications import NotificationCenter
+import time
 
-def render():
-    """صفحة التقارير المتقدمة"""
-    st.markdown("## 📈 التقارير المتقدمة والتفصيلية")
-    
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
-        "👤 تقرير مريض", 
-        "👨‍⚕️ تقرير طبيب", 
-        "💉 تقرير علاج",
-        "🏪 تقرير مورد",
-        "💰 تقرير مالي شامل"
-    ])
-    
-    with tab1:
-        render_patient_report()
-    
-    with tab2:
-        render_doctor_report()
-    
-    with tab3:
-        render_treatment_report()
-    
-    with tab4:
-        render_supplier_report()
-    
-    with tab5:
-        render_comprehensive_financial_report()
+# استيراد الصفحات
+import dashboard
+import appointments
+import patients
+import doctors
+import treatments
+import payments
+import financial_accounts
+import inventory
+import suppliers
+import expenses
+import reports
+import reports_advanced
+import settings
+import activity_log
 
-def render_patient_report():
-    """تقرير مريض مفصل"""
-    st.markdown("### 👤 تقرير مريض مفصل")
-    
-    patients = crud.get_all_patients()
-    if patients.empty:
-        st.info("لا يوجد مرضى لعرض تقاريرهم.")
-        return
-    
-    patient_id = st.selectbox(
-        "اختر المريض",
-        patients['id'].tolist(),
-        format_func=lambda x: f"{patients[patients['id'] == x]['name'].iloc[0]} (ID: {x})",
-        key="adv_report_patient_select"
-    )
-    
-    if st.button("📊 عرض تقرير المريض", key="show_patient_report_adv"):
-        with st.spinner("جاري تحميل التقرير..."):
-            report = crud.get_patient_detailed_report(patient_id)
-            
-            if not report or not report.get('patient'):
-                st.warning("لا توجد بيانات كافية لعرض تقرير هذا المريض.")
-                return
+# ========================
+# تهيئة التطبيق
+# ========================
+st.set_page_config(
+    page_title="نظام إدارة العيادة - Cura Clinic",
+    page_icon="🏥",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-            patient_info = report['patient']
-            st.markdown(f"#### 👤 {patient_info.get('name', 'بيانات المريض')}")
-            
-            col1, col2, col3, col4 = st.columns(4)
-            col1.metric("الهاتف", patient_info.get('phone', '-'))
-            col2.metric("الجنس", patient_info.get('gender', '-'))
-            col3.metric("فصيلة الدم", patient_info.get('blood_type', '-'))
-            col4.metric("تاريخ الميلاد", patient_info.get('date_of_birth', '-'))
-            
-            st.markdown("---")
-            
-            visits_stats = report.get('visits_stats', {})
-            st.markdown("#### 📅 إحصائيات الزيارات")
-            col1, col2, col3 = st.columns(3)
-            col1.metric("إجمالي الزيارات", visits_stats.get('total_visits', 0))
-            col2.metric("الزيارات المكتملة", visits_stats.get('completed_visits', 0))
-            col3.metric("الزيارات الملغية", visits_stats.get('cancelled_visits', 0))
-            
-            st.markdown("#### 💰 الملخص المالي")
-            col1, col2, col3 = st.columns(3)
-            col1.metric("التكلفة الإجمالية", f"{report.get('total_cost', 0):,.2f} ج.م")
-            col2.metric("إجمالي المدفوعات", f"{report.get('total_paid', 0):,.2f} ج.م")
-            col3.metric("المبلغ المتبقي", f"{report.get('outstanding', 0):,.2f} ج.م")
-            
-            if not report['appointments'].empty:
-                with st.expander("📅 عرض سجل المواعيد التفصيلي"):
-                    st.dataframe(report['appointments'], use_container_width=True, hide_index=True)
-            
-            if not report['payments'].empty:
-                with st.expander("💳 عرض سجل المدفوعات"):
-                    st.dataframe(report['payments'], use_container_width=True, hide_index=True)
+@st.cache_resource
+def init_db():
+    db.initialize()
+    return True
 
-def render_doctor_report():
-    """تقرير طبيب مفصل"""
-    st.markdown("### 👨‍⚕️ تقرير طبيب مفصل")
-    
-    doctors = crud.get_all_doctors()
-    if doctors.empty:
-        st.info("لا يوجد أطباء.")
-        return
-    
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        doctor_id = st.selectbox(
-            "اختر الطبيب",
-            doctors['id'].tolist(),
-            format_func=lambda x: f"{doctors[doctors['id'] == x]['name'].iloc[0]} (ID: {x})",
-            key="adv_report_doctor_select"
-        )
-    with col2:
-        start_date = st.date_input("من تاريخ", value=date.today() - timedelta(days=30), key="dr_start_adv")
-    with col3:
-        end_date = st.date_input("حتى تاريخ", value=date.today(), key="dr_end_adv")
-    
-    if st.button("📊 عرض تقرير الطبيب", key="show_doctor_report_adv"):
-        with st.spinner("جاري تحميل التقرير..."):
-            report = crud.get_doctor_detailed_report(doctor_id, start_date.isoformat(), end_date.isoformat())
+init_db()
 
-            if not report or not report.get('doctor'):
-                st.warning("لا توجد بيانات كافية لعرض تقرير هذا الطبيب.")
-                return
-            
-            doctor_info = report['doctor']
-            st.markdown(f"#### 👨‍⚕️ د. {doctor_info.get('name', 'بيانات الطبيب')}")
-            
-            stats = report['appointments_stats']
-            col1, col2, col3 = st.columns(3)
-            col1.metric("إجمالي المواعيد", stats.get('total_appointments', 0))
-            col2.metric("الإيرادات", f"{stats.get('total_revenue', 0):,.2f} ج.م")
-            col3.metric("العمولة", f"{report.get('total_commission', 0):,.2f} ج.م")
-            
-            if not report['monthly_performance'].empty:
-                st.markdown("##### الأداء الشهري")
-                fig = px.bar(report['monthly_performance'], x='month', y='revenue', title="الإيرادات الشهرية")
-                st.plotly_chart(fig, use_container_width=True)
-
-def render_treatment_report():
-    """تقرير علاج مفصل"""
-    st.markdown("### 💉 تقرير علاج مفصل")
-    
-    treatments = crud.get_all_treatments()
-    if treatments.empty:
-        st.info("لا توجد علاجات.")
-        return
-    
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        treatment_id = st.selectbox(
-            "اختر العلاج",
-            treatments['id'].tolist(),
-            format_func=lambda x: treatments[treatments['id'] == x]['name'].iloc[0],
-            key="adv_report_treatment_select"
-        )
-    with col2:
-        start_date = st.date_input("من تاريخ", value=date.today() - timedelta(days=90), key="treat_start_adv")
-    with col3:
-        end_date = st.date_input("حتى تاريخ", value=date.today(), key="treat_end_adv")
-    
-    if st.button("📊 عرض تقرير العلاج", key="show_treatment_report_adv"):
-        with st.spinner("جاري تحميل التقرير..."):
-            report = crud.get_treatment_detailed_report(treatment_id, start_date.isoformat(), end_date.isoformat())
-            
-            if not report or not report.get('treatment'):
-                st.warning("لا توجد بيانات كافية لهذا العلاج.")
-                return
-            
-            treatment_info = report['treatment']
-            st.markdown(f"#### 💉 {treatment_info.get('name', 'بيانات العلاج')}")
-            
-            stats = report['usage_stats']
-            col1, col2, col3 = st.columns(3)
-            col1.metric("إجمالي الحجوزات", stats.get('total_bookings', 0))
-            col2.metric("إجمالي الإيرادات", f"{stats.get('total_revenue', 0):,.2f} ج.م")
-            col3.metric("متوسط السعر", f"{stats.get('average_price', 0):,.2f} ج.م")
-
-def render_supplier_report():
-    """تقرير مورد مفصل"""
-    st.markdown("### 🏪 تقرير مورد مفصل")
-    
-    suppliers = crud.get_all_suppliers()
-    if suppliers.empty:
-        st.info("لا يوجد موردين.")
-        return
-    
-    supplier_id = st.selectbox(
-        "اختر المورد",
-        suppliers['id'].tolist(),
-        format_func=lambda x: suppliers[suppliers['id'] == x]['name'].iloc[0],
-        key="adv_report_supplier_select"
-    )
-    
-    if st.button("📊 عرض تقرير المورد", key="show_supplier_report_adv"):
-        with st.spinner("جاري تحميل التقرير..."):
-            report = crud.get_supplier_detailed_report(supplier_id)
-            
-            if not report or not report.get('supplier'):
-                st.warning("لا توجد بيانات كافية لهذا المورد.")
-                return
+# ========================
+# دالة إخفاء/إظهار القائمة الجانبية
+# ========================
+def auto_hide_sidebar():
+    """إخفاء القائمة الجانبية تلقائياً بعد الاختيار"""
+    st.markdown("""
+        <script>
+            const sidebar = window.parent.document.querySelector('[data-testid="stSidebar"]');
+            if (sidebar) {
+                const observer = new MutationObserver(mutations => {
+                    mutations.forEach(mutation => {
+                        if (mutation.attributeName === 'aria-expanded') {
+                            if (sidebar.getAttribute('aria-expanded') === 'true') {
+                                // Don't auto-hide if user manually opened it
+                                observer.disconnect();
+                            }
+                        }
+                    });
+                });
+                observer.observe(sidebar, { attributes: true });
                 
-            supplier_info = report['supplier']
-            st.markdown(f"#### 🏪 {supplier_info.get('name', 'بيانات المورد')}")
-            
-            col1, col2, col3 = st.columns(3)
-            col1.metric("عدد الأصناف الموردة", report.get('total_items', 0))
-            col2.metric("القيمة الإجمالية للمخزون", f"{report.get('total_value', 0):,.2f} ج.م")
-            col3.metric("أصناف منخفضة", report.get('low_stock_items', 0))
-            
-            if not report['items'].empty:
-                st.markdown("##### الأصناف الموردة")
-                st.dataframe(report['items'], use_container_width=True)
+                // Auto-hide
+                setTimeout(() => {
+                    if (sidebar.getAttribute('aria-expanded') === 'true') {
+                        const closeButton = window.parent.document.querySelector('[data-testid="collapsedControl"]');
+                        if (closeButton) {
+                            closeButton.click();
+                        }
+                    }
+                }, 500);
+            }
+        </script>
+    """, unsafe_allow_html=True)
 
-def render_comprehensive_financial_report():
-    """تقرير مالي شامل"""
-    st.markdown("### 💰 التقرير المالي الشامل")
+def show_sidebar():
+    st.markdown("""
+        <script>
+            const sidebar = window.parent.document.querySelector('[data-testid="stSidebar"]');
+            if (sidebar && sidebar.getAttribute('aria-expanded') === 'false') {
+                const openButton = window.parent.document.querySelector('[data-testid="collapsedControl"]');
+                if (openButton) {
+                    openButton.click();
+                }
+            }
+        </script>
+    """, unsafe_allow_html=True)
+
+# ========================
+# الشريط الجانبي المحسّن (مع أقسام)
+# ========================
+def render_sidebar():
+    with st.sidebar:
+        # شعار العيادة
+        st.markdown("""
+            <div style='text-align: center; padding: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 15px; margin-bottom: 20px;'>
+                <h1 style='color: white; margin: 0; font-size: 2rem;'>🏥 Cura Clinic</h1>
+                <p style='color: #e0e0e0; margin: 5px 0; font-size: 0.9rem;'>نظام إدارة العيادة المتكامل</p>
+                <p style='color: #ffeb3b; margin: 5px 0; font-size: 0.8rem;'>⭐ الإصدار المحسّن 2.0</p>
+            </div>
+        """, unsafe_allow_html=True)
+
+        # اختيار الثيم
+        theme_map = {
+            "🔵 أزرق احترافي": "blue", "🟣 بنفسجي أنيق": "purple", 
+            "🟢 أخضر مريح": "green", "🟠 برتقالي دافئ": "orange",
+            "⚫ داكن حديث": "dark", "🩷 وردي ناعم": "pink"
+        }
+        theme_choice = st.selectbox(
+            "🎨 اختر الثيم المفضل", list(theme_map.keys()), key="theme_select"
+        )
+        load_custom_css(theme=theme_map[theme_choice])
+
+        st.markdown("---")
+
+        if 'current_page' not in st.session_state:
+            st.session_state.current_page = 'dashboard'
+
+        # دالة لإنشاء زر الصفحة
+        def create_nav_button(label, page_id, help_text):
+            is_active = st.session_state.current_page == page_id
+            button_label = f"✅ {label}" if is_active else label
+            if st.button(button_label, key=f"nav_{page_id}", use_container_width=True, help=help_text, type="primary" if is_active else "secondary"):
+                st.session_state.current_page = page_id
+                st.session_state.sidebar_action = True
+                st.rerun()
+
+        # الأقسام
+        with st.expander("🚀 العمليات الرئيسية", expanded=True):
+            create_nav_button("🏠 الرئيسية", "dashboard", "عرض لوحة التحكم")
+            create_nav_button("📅 المواعيد", "appointments", "إدارة المواعيد")
+            create_nav_button("👥 المرضى", "patients", "إدارة ملفات المرضى")
+            create_nav_button("👨‍⚕️ الأطباء", "doctors", "إدارة بيانات الأطباء")
+            create_nav_button("💉 العلاجات", "treatments", "إدارة العلاجات والخدمات")
+
+        with st.expander("💰 الإدارة المالية"):
+            create_nav_button("💰 المدفوعات", "payments", "تسجيل المدفوعات")
+            create_nav_button("💼 الحسابات المالية", "financial_accounts", "كشوف الحسابات")
+            create_nav_button("💸 المصروفات", "expenses", "تسجيل المصروفات")
+            
+        with st.expander("📦 المخزون والموردين"):
+            create_nav_button("📦 المخزون", "inventory", "إدارة المخزون")
+            create_nav_button("🏪 الموردين", "suppliers", "إدارة الموردين")
+
+        with st.expander("📈 التحليلات والإدارة"):
+            create_nav_button("📊 التقارير", "reports", "عرض التقارير العامة")
+            create_nav_button("📈 تقارير متقدمة", "reports_advanced", "عرض التقارير التفصيلية")
+            create_nav_button("📝 سجل الأنشطة", "activity_log", "مراقبة الأنشطة")
+            create_nav_button("⚙️ الإعدادات", "settings", "ضبط إعدادات النظام")
+            
+        st.markdown("---")
+        
+        # معلومات سريعة
+        with st.expander("📊 نظرة سريعة", expanded=True):
+            stats = crud.get_dashboard_stats()
+            now = datetime.now()
+            
+            st.info(f"📅 {now.strftime('%Y-%m-%d')} | ⏰ {now.strftime('%H:%M')}")
+            st.success(f"📌 مواعيد اليوم: {stats.get('today_appointments', 0)}")
+            
+            if stats.get('low_stock_items', 0) > 0:
+                st.warning(f"⚠️ مخزون منخفض: {stats['low_stock_items']}")
+            if stats.get('expiring_items', 0) > 0:
+                st.error(f"🚨 أصناف تنتهي قريباً: {stats['expiring_items']}")
+        
+        st.markdown("---")
+        
+        # مركز الإشعارات
+        NotificationCenter.render()
+
+# ========================
+# التوجيه إلى الصفحات
+# ========================
+def main():
+    render_sidebar()
     
-    col1, col2 = st.columns(2)
+    # إخفاء القائمة الجانبية إذا تم اختيار صفحة
+    if st.session_state.get('sidebar_action', False):
+        auto_hide_sidebar()
+        st.session_state.sidebar_action = False
+    
+    # عرض الإشعارات العاجلة
+    NotificationCenter.show_urgent_toast_notifications()
+
+    # تعيين الصفحات
+    page_mapping = {
+        'dashboard': dashboard.render,
+        'appointments': appointments.render,
+        'patients': patients.render,
+        'doctors': doctors.render,
+        'treatments': treatments.render,
+        'payments': payments.render,
+        'financial_accounts': financial_accounts.render,
+        'inventory': inventory.render,
+        'suppliers': suppliers.render,
+        'expenses': expenses.render,
+        'reports': reports.render,
+        'reports_advanced': reports_advanced.render,
+        'settings': settings.render,
+        'activity_log': activity_log.render
+    }
+    
+    page = st.session_state.get('current_page', 'dashboard')
+    render_func = page_mapping.get(page, dashboard.render)
+    
+    page_titles = {
+        'dashboard': '🏠 لوحة التحكم الرئيسية',
+        'appointments': '📅 إدارة المواعيد',
+        'patients': '👥 إدارة المرضى',
+        'doctors': '👨‍⚕️ إدارة الأطباء',
+        'treatments': '💉 إدارة العلاجات',
+        'payments': '💰 إدارة المدفوعات',
+        'financial_accounts': '💼 الحسابات المالية الشاملة',
+        'inventory': '📦 إدارة المخزون',
+        'suppliers': '🏪 إدارة الموردين',
+        'expenses': '💸 إدارة المصروفات',
+        'reports': '📊 التقارير العامة',
+        'reports_advanced': '📈 التقارير المتقدمة',
+        'settings': '⚙️ الإعدادات',
+        'activity_log': '📝 سجل الأنشطة'
+    }
+    
+    # شريط التنقل العلوي
+    col1, col2, col3 = st.columns([1, 3, 1])
     with col1:
-        start_date = st.date_input("من تاريخ", value=date.today().replace(day=1), key="fin_start_adv")
-    with col2:
-        end_date = st.date_input("حتى تاريخ", value=date.today(), key="fin_end_adv")
+        if st.button("☰ القائمة", help="إظهار/إخفاء القائمة الجانبية"):
+            show_sidebar()
     
-    if st.button("📊 إنشاء التقرير المالي", key="create_financial_report_adv"):
-        with st.spinner("جاري تحميل التقرير..."):
-            report = crud.get_comprehensive_financial_report(start_date.isoformat(), end_date.isoformat())
-            
-            if not report:
-                st.warning("لا توجد بيانات مالية في هذه الفترة.")
-                return
-            
-            earnings = report['clinic_earnings']
-            col1, col2, col3 = st.columns(3)
-            col1.metric("إجمالي الإيرادات", f"{earnings.get('total_revenue', 0):,.2f} ج.م")
-            col2.metric("حصة العيادة", f"{earnings.get('total_clinic_earnings', 0):,.2f} ج.م")
-            col3.metric("حصة الأطباء", f"{earnings.get('total_doctor_earnings', 0):,.2f} ج.م")
-            
-            if not report['cash_flow'].empty:
-                st.markdown("##### التدفق النقدي")
-                fig = px.line(report['cash_flow'], x='date', y='cumulative', title="التدفق النقدي التراكمي")
-                st.plotly_chart(fig, use_container_width=True)
+    with col2:
+        st.markdown(f"<h2 style='text-align: center; margin: 0;'>{page_titles.get(page, 'Cura Clinic')}</h2>", unsafe_allow_html=True)
+    
+    with col3:
+        if page != 'dashboard':
+            if st.button("🏠 الرئيسية", help="العودة للوحة التحكم"):
+                st.session_state.current_page = 'dashboard'
+                st.rerun()
+    
+    st.markdown("---")
+    
+    render_func()
+
+if __name__ == "__main__":
+    main()
